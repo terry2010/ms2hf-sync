@@ -14,8 +14,8 @@
 
 **① Fork 本仓库** → 右上角 *Fork*，建议保持 public（Actions 免费不限时；private 每月 2000 分钟额度）。
 
-**② 配两个 secrets**——进入**你 fork 后的仓库**：
-*Settings → Secrets and variables → Actions → New repository secret*，依次添加：
+**② 配两个 secrets**——进入**你 fork 后的仓库页面**（不是个人设置）：
+仓库顶部标签栏 **Settings**（Code/Issues 那一排最右侧）→ 左侧边栏 **Secrets and variables** → **Actions** → 绿色按钮 **New repository secret**，依次添加：
 
 | Name | 值 | 在哪拿 |
 |---|---|---|
