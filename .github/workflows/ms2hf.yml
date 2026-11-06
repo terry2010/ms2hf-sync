@@ -1,0 +1,50 @@
+name: ms2hf-sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      direction:
+        description: 'Sync direction: ms2hf (ModelScope -> HF) or hf2ms (HF -> ModelScope)'
+        required: true
+        default: 'ms2hf'
+        type: choice
+        options:
+          - ms2hf
+          - hf2ms
+      source_repo:
+        description: 'Source repo id (owner/name)'
+        required: true
+        default: 'terry2010/Huihui-Ornith-1.5-35B-A3B-oQ4e-mtp'
+      target_repo:
+        description: 'Target repo id (owner/name)'
+        required: true
+        default: 'terry2010/Ornith-1.5-35B-A3B-abliterated-MLX-oQ4e-mtp'
+      repo_type:
+        description: 'Repository type'
+        required: true
+        default: 'model'
+        type: choice
+        options:
+          - model
+          - dataset
+
+concurrency:
+  group: ms2hf-${{ inputs.direction }}-${{ inputs.source_repo }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install ms2hf
+        run: pip install ms2hf
+
+      - name: Sync ${{ inputs.direction }} ${{ inputs.source_repo }} -> ${{ inputs.target_repo }}
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          MS_TOKEN: ${{ secrets.MS_TOKEN }}
+        # --workers 2 keeps peak disk at ~2x largest file (~10GB) under the ~14GB runner limit
+        run: |
+          ${{ inputs.direction }} "${{ inputs.source_repo }}" "${{ inputs.target_repo }}" \
+            --repo-type "${{ inputs.repo_type }}" \
+            --workers 2
