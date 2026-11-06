@@ -28,6 +28,8 @@
 
 **④ 跑一次**：*Actions → 左侧 ms2hf-sync → 右侧 Run workflow* → 填四个参数 → 点 **Run workflow**：
 
+![手动触发 workflow 入口](docs/run-workflow.png)
+
 | 参数 | 填什么 | 示例 |
 |---|---|---|
 | direction | `ms2hf` = MS→HF；`hf2ms` = HF→MS | `ms2hf` |
