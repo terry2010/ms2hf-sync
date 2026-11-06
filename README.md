@@ -17,6 +17,8 @@
 **② 配两个 secrets**——进入**你 fork 后的仓库页面**（不是个人设置）：
 仓库顶部标签栏 **Settings**（Code/Issues 那一排最右侧）→ 左侧边栏 **Secrets and variables** → **Actions** → 绿色按钮 **New repository secret**，依次添加：
 
+![secrets 配置路径示意](docs/secrets-setup.png)
+
 | Name | 值 | 在哪拿 |
 |---|---|---|
 | `HF_TOKEN` | `hf_xxx` | huggingface.co → Settings → Access Tokens（选 **write** 权限） |
