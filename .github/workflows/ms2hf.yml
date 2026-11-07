@@ -1,13 +1,8 @@
-name: ms2hf 模型同步（点 Run workflow 看使用说明）
+name: ms2hf 模型同步
 
 on:
   workflow_dispatch:
     inputs:
-      _readme:
-        description: '【使用说明】① 先在 Settings → Secrets and variables → Actions 配好 HF_TOKEN 和 MS_TOKEN 两个 secret；② direction 选同步方向；③ source_repo/target_repo 填 owner/name；④ mirror=删除目标上源没有的文件（危险）；force=整仓重传（一般不用）。默认已按 sha256 增量同步：缺失或内容变化的文件才会传输。完整文档见仓库 README.md'
-        required: false
-        default: ''
-        type: string
       direction:
         description: 'Sync direction'
         required: true
