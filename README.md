@@ -65,9 +65,11 @@
 
 - 参数与同步 workflow 相同（direction / source / target / repo_type）
 - 按 **sha256** 判定一致性，报告分五类：✅ 一致 / 🔶 内容不同 / 🔴 只在源仓（待传）/ 🟣 只在目标仓（mirror 会删）/ ⚪ 无法比对
-- 结果渲染在 run 页面的 **Summary 卡片**里（markdown 表格），日志里也有纯文本版
+- 报告是一张 `源 | 目标 | 结果` 三区表，渲染在 run 页面的 **Summary 卡片**里
+- **同步 workflow 跑完会自动追加一个 verify job 跑同款对比**（即使同步失败/超时也跑），run 页面直接看到「同步后两边还差什么」
+- 比对逻辑统一在 `scripts/compare.py`，两个 workflow 共用
 
-建议节奏：**先跑一次对比 → 确认差异符合预期 → 再跑同步**。
+建议节奏：**先跑一次对比 → 确认差异符合预期 → 再跑同步**；同步结束后看自动复检结果。
 
 ## 配置参数细节
 
@@ -128,8 +130,9 @@ MS 对仓库名有审核词表（如 `abliterated`），换个中性名字即可
 ## 文件说明
 
 ```
-.github/workflows/ms2hf.yml      手动触发的同步 workflow（全部逻辑都在这）
-.github/workflows/repo-diff.yml  只读差异对比 workflow（不写任何数据）
+.github/workflows/ms2hf.yml      同步 workflow（sync job + 自动 verify 复检 job）
+.github/workflows/repo-diff.yml  只读差异对比 workflow
+scripts/compare.py               差异比对脚本（两个 workflow 共用）
 README.md                     本文件
 ```
 

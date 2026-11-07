@@ -207,3 +207,24 @@ jobs:
               else:
                   dst.api.delete_files(dst_repo, repo_type, p, token=dst.token)
           PY
+
+  # Post-sync audit: always runs after the sync job (even on failure/timeout) and
+  # renders a src|target|result report to the run summary.
+  verify:
+    needs: sync
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: pip install ms2hf
+      - name: Post-sync diff audit
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          MS_TOKEN: ${{ secrets.MS_TOKEN }}
+          COMPARE_SRC_REPO: ${{ inputs.source_repo }}
+          COMPARE_DST_REPO: ${{ inputs.target_repo }}
+          COMPARE_REPO_TYPE: ${{ inputs.repo_type }}
+          COMPARE_DIRECTION: ${{ inputs.direction }}
+          COMPARE_NOTE: '同步 job 结果：${{ needs.sync.result }}'
+        run: python scripts/compare.py
