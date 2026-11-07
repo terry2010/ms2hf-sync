@@ -36,6 +36,7 @@
 | source_repo | 源仓库 `owner/name`（方向决定平台） | `Qwen/Qwen3-0.6B` |
 | target_repo | 目标仓库 `owner/name` | `你的ID/Qwen3-0.6B` |
 | repo_type | `model` 或 `dataset` | `model` |
+| mirror | ⚠️ 镜像删除：同步后删除目标上源没有的文件 | 默认关闭 |
 
 **⑤ 看进度**：点进正在跑的 job → 展开 *Sync* 步骤，能看到每个文件的下载/上传实时进度。传完一个删一个，目标已有的自动跳过——**挂了直接再点一次 Run，已传的不重传**。
 
@@ -56,13 +57,24 @@
 
 ## 配置参数细节
 
-workflow_dispatch 的四个输入项：
+workflow_dispatch 的五个输入项：
 
 | 参数 | 说明 | 注意 |
 |---|---|---|
 | `direction` | 同步方向，决定 source/target 各是哪个平台 | `ms2hf`: 源=MS仓, 目标=HF仓；`hf2ms` 反之 |
 | `source_repo` / `target_repo` | `owner/name` 格式 | 私有仓需要对应 token 有读/写权限 |
 | `repo_type` | `model` / `dataset` | 两边类型保持一致 |
+| `mirror` | 镜像删除开关 | 见下文 ⚠️ |
+
+### `mirror` 镜像删除（默认关闭，慎开）
+
+默认模式是**并集同步**：只加不删，源删了文件目标不会跟着删。勾选 `mirror` 后变成**镜像同步**——文件传完后，删除目标仓里「源仓没有」的所有文件，目标最终与源逐文件一致。
+
+- **不可逆**，被删文件只能从别处恢复
+- 会删除目标上**手工上传的独有文件**：仅存在于 HF 的 README 修订、LICENSE、`.gitattributes` 等
+- 源仓不完整时会误删——确认源是权威完整版再开
+- 删除逐条打在 job 日志里（`mirror: deleting <path>`），可事后审计
+- 建议流程：先不开镜像跑一遍同步 → 核对两边文件清单 → 再勾选补跑一次
 
 并发控制：相同方向+源仓的任务同时只跑一个（`concurrency` 组），重复触发会排队而不是冲突。
 

@@ -27,6 +27,11 @@ on:
         options:
           - model
           - dataset
+      mirror:
+        description: '镜像删除（危险，默认关闭）：文件同步完成后，删除目标仓库中「源仓库不存在」的文件，使目标与源完全一致。开启前请确认：1) 源仓库是完整的权威版本，否则目标上会误删未同步到的文件；2) 目标仓库里没有手工上传的独有文件（如仅存在于 HF 的 README 修订、LICENSE、.gitattributes），镜像后这些会被清掉。删除在日志中逐条打印可审计，但不可恢复。建议首次使用先不开镜像跑一遍，核对两边文件清单后再开。'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: ms2hf-${{ inputs.direction }}-${{ inputs.source_repo }}
@@ -53,3 +58,41 @@ jobs:
           $CMD "${{ inputs.source_repo }}" "${{ inputs.target_repo }}" \
             --repo-type "${{ inputs.repo_type }}" \
             --workers 2
+
+      # Mirror mode: after syncing, delete files that exist on the target but not
+      # on the source. Destructive — only runs when the mirror checkbox is on.
+      - name: Mirror deletions (remove files absent from source)
+        if: inputs.mirror
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          MS_TOKEN: ${{ secrets.MS_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os
+          from ms2hf import HuggingFaceBackend, ModelScopeBackend, _hf_repo_type
+
+          direction = "${{ inputs.direction }}"
+          src_repo = "${{ inputs.source_repo }}"
+          dst_repo = "${{ inputs.target_repo }}"
+          repo_type = "${{ inputs.repo_type }}"
+
+          ms_to_hf = direction == "ModelScope → HuggingFace"
+          src = ModelScopeBackend(token=os.environ["MS_TOKEN"]) if ms_to_hf \
+              else HuggingFaceBackend(token=os.environ["HF_TOKEN"])
+          dst = HuggingFaceBackend(token=os.environ["HF_TOKEN"]) if ms_to_hf \
+              else ModelScopeBackend(token=os.environ["MS_TOKEN"])
+
+          src_paths = {f.path for f in src.list_files(src_repo, repo_type, None)}
+          dst_paths = [f.path for f in dst.list_files(dst_repo, repo_type, None)]
+          extra = sorted(set(dst_paths) - src_paths)
+
+          if not extra:
+              print("mirror: target matches source, nothing to delete")
+          for p in extra:
+              print(f"mirror: deleting {p}")
+              if ms_to_hf:
+                  dst.api.delete_file(path_in_repo=p, repo_id=dst_repo,
+                                      repo_type=_hf_repo_type(repo_type), token=dst.token)
+              else:
+                  dst.api.delete_files(dst_repo, repo_type, p, token=dst.token)
+          PY
