@@ -32,7 +32,7 @@
 
 | 参数 | 填什么 | 示例 |
 |---|---|---|
-| direction | `ms2hf` = MS→HF；`hf2ms` = HF→MS | `ms2hf` |
+| direction | 下拉选同步方向 | `ModelScope → HuggingFace` |
 | source_repo | 源仓库 `owner/name`（方向决定平台） | `Qwen/Qwen3-0.6B` |
 | target_repo | 目标仓库 `owner/name` | `你的ID/Qwen3-0.6B` |
 | repo_type | `model` 或 `dataset` | `model` |

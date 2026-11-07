@@ -4,13 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       direction:
-        description: 'Sync direction: ms2hf (ModelScope -> HF) or hf2ms (HF -> ModelScope)'
+        description: 'Sync direction'
         required: true
-        default: 'ms2hf'
+        default: 'ModelScope → HuggingFace'
         type: choice
         options:
-          - ms2hf
-          - hf2ms
+          - 'ModelScope → HuggingFace'
+          - 'HuggingFace → ModelScope'
       source_repo:
         description: 'Source repo id (owner/name)'
         required: true
@@ -45,6 +45,11 @@ jobs:
           MS_TOKEN: ${{ secrets.MS_TOKEN }}
         # --workers 2 keeps peak disk at ~2x largest file (~10GB) under the ~14GB runner limit
         run: |
-          ${{ inputs.direction }} "${{ inputs.source_repo }}" "${{ inputs.target_repo }}" \
+          case "${{ inputs.direction }}" in
+            "ModelScope → HuggingFace") CMD=ms2hf ;;
+            "HuggingFace → ModelScope") CMD=hf2ms ;;
+            *) echo "unknown direction: ${{ inputs.direction }}"; exit 1 ;;
+          esac
+          $CMD "${{ inputs.source_repo }}" "${{ inputs.target_repo }}" \
             --repo-type "${{ inputs.repo_type }}" \
             --workers 2
