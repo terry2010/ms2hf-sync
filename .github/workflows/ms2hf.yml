@@ -33,7 +33,7 @@ on:
         default: false
         type: boolean
       force:
-        description: '强制覆盖（默认关闭，通常不必开）：默认按「路径」判定跳过——同名文件内容不同也会被跳过，目标保留旧文件。勾选后无视目标已有文件，全部重新下载并覆盖上传。注意：没有 hash 增量对比，开启=全量重传（大仓要重新下载整仓，只推荐在确认内容过期时使用）。与 mirror 同时勾选 = 完全镜像（同名覆盖 + 多余删除）。'
+        description: '强制全量（默认关闭，通常不必开）：默认已按 sha256 自动检测变化——缺失/hash 不同的文件才传，未变的跳过。勾选后跳过差异比对，无视目标已有文件整仓重传，仅在想强制刷新全部文件时使用（大仓很慢）。与 mirror 同时勾选 = 完全镜像（全量覆盖 + 多余删除）。'
         required: false
         default: false
         type: boolean
@@ -49,6 +49,102 @@ jobs:
       - name: Install ms2hf
         run: pip install ms2hf
 
+      # Content-aware diff: compare sha256 (LFS files carry it on both platforms),
+      # size, and presence. Small files without a comparable hash are re-transferred
+      # (cheap); large unverifiable same-size files are skipped with a warning.
+      - name: Compute file diff
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          MS_TOKEN: ${{ secrets.MS_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os, re
+          from ms2hf import ModelScopeBackend, _hf_repo_type
+          from huggingface_hub import HfApi
+          from huggingface_hub.hf_api import RepoFile
+          from modelscope.hub.api import HubApi
+
+          direction = "${{ inputs.direction }}"
+          src_repo = "${{ inputs.source_repo }}"
+          dst_repo = "${{ inputs.target_repo }}"
+          repo_type = "${{ inputs.repo_type }}"
+          ms_to_hf = direction == "ModelScope → HuggingFace"
+
+          def ms_meta(repo_id):
+              api = HubApi()
+              tok = os.environ.get("MS_TOKEN")
+              if tok:
+                  api.login(tok)
+              if repo_type == "model":
+                  out = {}
+                  for f in api.get_model_files(model_id=repo_id, recursive=True,
+                                               use_cookies=bool(tok)):
+                      if f.get("Type") == "tree" or not f.get("Path"):
+                          continue
+                      out[f["Path"]] = {"sha": (f.get("Sha256") or "").lower() or None,
+                                        "size": f.get("Size")}
+                  return out
+              b = ModelScopeBackend(token=tok)
+              return {f.path: {"sha": None, "size": f.size}
+                      for f in b.list_files(repo_id, repo_type, None)}
+
+          def hf_meta(repo_id):
+              api = HfApi(token=os.environ.get("HF_TOKEN"))
+              out = {}
+              for e in api.list_repo_tree(repo_id, repo_type=_hf_repo_type(repo_type),
+                                          recursive=True):
+                  if not isinstance(e, RepoFile):
+                      continue
+                  out[e.path] = {"sha": e.lfs.sha256.lower() if e.lfs else None,
+                                 "size": e.size}
+              return out
+
+          src = (ms_meta if ms_to_hf else hf_meta)(src_repo)
+          try:
+              dst = (hf_meta if ms_to_hf else ms_meta)(dst_repo)
+          except Exception as e:
+              print(f"target listing failed, treating as empty: {e}")
+              dst = {}
+
+          if not src:
+              raise SystemExit("source repo listed 0 files - aborting to avoid no-op sync")
+
+          SMALL = 100 * 1024 * 1024  # re-transfer threshold when no hash is comparable
+          changed, skipped, unverifiable = [], 0, []
+          for p, sm in src.items():
+              dm = dst.get(p)
+              if dm is None:
+                  changed.append((p, "missing")); continue
+              if sm["sha"] and dm["sha"]:
+                  if sm["sha"] != dm["sha"]:
+                      changed.append((p, "sha256 differs"))
+                  else:
+                      skipped += 1
+                  continue
+              if sm["size"] is not None and dm["size"] is not None \
+                 and int(sm["size"]) != int(dm["size"]):
+                  changed.append((p, "size differs")); continue
+              sz = int(sm["size"] or dm["size"] or 0)
+              if sz < SMALL:
+                  changed.append((p, "hash unavailable (small, cheap re-transfer)"))
+              else:
+                  unverifiable.append(p)
+
+          print(f"diff: {len(src)} source / {len(dst)} target -> "
+                f"{len(changed)} to transfer, {skipped} unchanged")
+          for p, why in changed:
+              print(f"  transfer [{why}]: {p}")
+          for p in unverifiable:
+              print(f"  SKIP unverifiable same-size, no hash: {p}")
+
+          with open("diff_paths.txt", "w") as f:
+              for p, _ in changed:
+                  f.write(p + "\n")
+          with open("include_patterns.txt", "w") as f:
+              for p, _ in changed:
+                  f.write("^" + re.escape(p) + "$" + "\n")
+          PY
+
       - name: Sync ${{ inputs.direction }} ${{ inputs.source_repo }} -> ${{ inputs.target_repo }}
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -60,11 +156,19 @@ jobs:
             "HuggingFace → ModelScope") CMD=hf2ms ;;
             *) echo "unknown direction: ${{ inputs.direction }}"; exit 1 ;;
           esac
-          FORCE_FLAG=""
-          [ "${{ inputs.force }}" = "true" ] && FORCE_FLAG="--force"
-          $CMD "${{ inputs.source_repo }}" "${{ inputs.target_repo }}" \
-            --repo-type "${{ inputs.repo_type }}" \
-            --workers 2 $FORCE_FLAG
+          if [ "${{ inputs.force }}" = "true" ]; then
+            echo "force=on: full re-transfer (diff ignored)"
+            $CMD "${{ inputs.source_repo }}" "${{ inputs.target_repo }}" \
+              --repo-type "${{ inputs.repo_type }}" --workers 2 --force
+          elif [ -s diff_paths.txt ]; then
+            mapfile -t ARGS < <(while IFS= read -r p; do \
+              [ -n "$p" ] && printf -- "--include-regex\n%s\n" "$p"; done < include_patterns.txt)
+            echo "transferring $(wc -l < diff_paths.txt) changed/missing file(s)"
+            $CMD "${{ inputs.source_repo }}" "${{ inputs.target_repo }}" \
+              --repo-type "${{ inputs.repo_type }}" --workers 2 --force "${ARGS[@]}"
+          else
+            echo "target already up to date (sha256 verified) - nothing to transfer"
+          fi
 
       # Mirror mode: after syncing, delete files that exist on the target but not
       # on the source. Destructive — only runs when the mirror checkbox is on.
