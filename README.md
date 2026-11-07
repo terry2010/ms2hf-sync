@@ -59,6 +59,16 @@
 - 模型（model）和数据集（dataset）仓库都支持
 - workflow 只用官方 CLI（`ms2hf`），token 不经过任何第三方 Action 代码
 
+## 仓库差异对比（只读审计）
+
+第二个 workflow **`仓库差异对比`**（`repo-diff.yml`）：只列两边文件比对，**不传输、不修改任何数据**——适合同步前预览「会传什么、会删什么」。
+
+- 参数与同步 workflow 相同（direction / source / target / repo_type）
+- 按 **sha256** 判定一致性，报告分五类：✅ 一致 / 🔶 内容不同 / 🔴 只在源仓（待传）/ 🟣 只在目标仓（mirror 会删）/ ⚪ 无法比对
+- 结果渲染在 run 页面的 **Summary 卡片**里（markdown 表格），日志里也有纯文本版
+
+建议节奏：**先跑一次对比 → 确认差异符合预期 → 再跑同步**。
+
 ## 配置参数细节
 
 workflow_dispatch 的六个输入项：
@@ -118,7 +128,8 @@ MS 对仓库名有审核词表（如 `abliterated`），换个中性名字即可
 ## 文件说明
 
 ```
-.github/workflows/ms2hf.yml   手动触发的同步 workflow（全部逻辑都在这）
+.github/workflows/ms2hf.yml      手动触发的同步 workflow（全部逻辑都在这）
+.github/workflows/repo-diff.yml  只读差异对比 workflow（不写任何数据）
 README.md                     本文件
 ```
 
