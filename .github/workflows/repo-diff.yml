@@ -123,56 +123,63 @@ jobs:
                   if sm["sha"] == dm["sha"]:
                       identical.append(p)
                   else:
-                      changed.append((p, "sha256 differs"))
+                      changed.append((p, "sha256 不同"))
                   continue
               if sm["size"] is not None and dm["size"] is not None \
                  and int(sm["size"]) != int(dm["size"]):
-                  changed.append((p, f"size differs ({size_str(sm['size'])} vs {size_str(dm['size'])})"))
+                  changed.append((p, f"大小不同 {size_str(sm['size'])} → {size_str(dm['size'])}"))
                   continue
               sz = int(sm["size"] or dm["size"] or 0)
               if sz < 100 * 1024 * 1024:
-                  unverifiable.append((p, "no comparable hash (small)"))
+                  unverifiable.append((p, "无 hash 可比对（小文件）"))
               else:
-                  unverifiable.append((p, f"no comparable hash ({size_str(sz)})"))
+                  unverifiable.append((p, f"无 hash 可比对（{size_str(sz)}）"))
 
           dst_only = sorted(set(dst) - set(src)) if dst else []
 
-          def esc(p):
-              return p.replace("|", "\\|")
+          import html
+          def cell(m, p):
+              if not m:
+                  return ""
+              return f"<code>{html.escape(p)}</code><br><sub>{size_str(m.get('size'))}</sub>"
 
-          lines = []
-          a = lines.append
-          a(f"## 仓库差异对比\n")
-          a(f"- 源（{src_name}）：`{src_repo}` — {len(src)} 个文件")
-          a(f"- 目标（{dst_name}）：`{dst_repo}` — "
-            + ("列取失败" if dst_listing_failed else f"{len(dst)} 个文件"))
+          CAP = 200  # rows per section in the rendered table
+          def sec(rows_out, title, items):
+              rows_out.append(f'<tr><td colspan="3"><b>{title}（{len(items)} 个）</b></td></tr>')
+              for r in items[:CAP]:
+                  rows_out.append(r)
+              if len(items) > CAP:
+                  rows_out.append(f'<tr><td colspan="3"><i>…另有 {len(items)-CAP} 个，见日志</i></td></tr>')
+
+          tr = lambda *c: "<tr>" + "".join(f"<td>{x}</td>" for x in c) + "</tr>"
+          R = []
+          R.append(f"<h3>仓库差异对比</h3>")
+          R.append(f"<p>源（{src_name}）<code>{src_repo}</code>：{len(src)} 个文件 ｜ "
+                   f"目标（{dst_name}）<code>{dst_repo}</code>："
+                   + ("列取失败" if dst_listing_failed else f"{len(dst)} 个文件") + "</p>")
           if dst_listing_failed:
-              a(f"\n> ⚠️ 目标仓列取失败（`{err}`），以下把目标视为空\n")
-          a(f"\n| 状态 | 数量 |\n|---|---|")
-          a(f"| ✅ 一致（sha256 相同） | {len(identical)} |")
-          a(f"| 🔶 内容不同 | {len(changed)} |")
-          a(f"| 🔴 只在源仓（待传） | {len(src_only)} |")
-          a(f"| 🟣 只在目标仓（mirror 会删） | {len(dst_only)} |")
-          a(f"| ⚪ 无法比对 | {len(unverifiable)} |")
+              R.append(f"<p>⚠️ 目标仓列取失败（<code>{html.escape(str(err))}</code>），以下把目标视为空</p>")
+          R.append("<table>")
+          R.append("<tr><th>源</th><th>目标</th><th>结果</th></tr>")
 
-          def table(title, rows, cols):
-              if not rows:
-                  return
-              a(f"\n### {title}\n")
-              a("| 文件 | " + " | ".join(cols[1:]) + " |" if len(cols) > 1 else "| 文件 |")
-              a("|---" * (1 + (len(cols) - 1 if len(cols) > 1 else 0)) + "|")
-              for r in rows:
-                  if isinstance(r, tuple):
-                      a("| `" + esc(r[0]) + "` | " + " | ".join(r[1:]) + " |")
-                  else:
-                      a("| `" + esc(r) + "` |" + (" |" * (len(cols) - 1) if len(cols) > 1 else ""))
+          if src_only:
+              sec(R, "🔴 只在源仓",
+                  [tr(cell(src[p], p), "", "待传输") for p in src_only])
+          if dst_only:
+              sec(R, "🟣 只在目标仓",
+                  [tr("", cell(dst[p], p), "mirror 会删") for p in dst_only])
+          if changed:
+              sec(R, "🔶 内容不同",
+                  [tr(cell(src[p], p), cell(dst[p], p), why) for p, why in changed])
+          if unverifiable:
+              sec(R, "⚪ 无法比对",
+                  [tr(cell(src[p], p), cell(dst[p], p), why) for p, why in unverifiable])
+          if identical:
+              sec(R, "✅ 一致",
+                  [tr(cell(src[p], p), cell(dst[p], p), "sha256 相同") for p in identical])
+          R.append("</table>")
 
-          table("🔴 只在源仓", [(p, size_str(src[p]['size'])) for p in src_only], ("", "大小"))
-          table("🔶 内容不同", changed, ("", "原因"))
-          table("🟣 只在目标仓", dst_only, ("",))
-          table("⚪ 无法比对（无 hash）", unverifiable, ("", "说明"))
-
-          report = "\n".join(lines)
+          report = "\n".join(R)
           print(report)
           summary = os.environ.get("GITHUB_STEP_SUMMARY")
           if summary:
