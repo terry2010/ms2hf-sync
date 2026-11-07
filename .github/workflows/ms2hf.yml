@@ -32,6 +32,11 @@ on:
         required: false
         default: false
         type: boolean
+      force:
+        description: '强制覆盖（默认关闭，通常不必开）：默认按「路径」判定跳过——同名文件内容不同也会被跳过，目标保留旧文件。勾选后无视目标已有文件，全部重新下载并覆盖上传。注意：没有 hash 增量对比，开启=全量重传（大仓要重新下载整仓，只推荐在确认内容过期时使用）。与 mirror 同时勾选 = 完全镜像（同名覆盖 + 多余删除）。'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: ms2hf-${{ inputs.direction }}-${{ inputs.source_repo }}
@@ -55,9 +60,11 @@ jobs:
             "HuggingFace → ModelScope") CMD=hf2ms ;;
             *) echo "unknown direction: ${{ inputs.direction }}"; exit 1 ;;
           esac
+          FORCE_FLAG=""
+          [ "${{ inputs.force }}" = "true" ] && FORCE_FLAG="--force"
           $CMD "${{ inputs.source_repo }}" "${{ inputs.target_repo }}" \
             --repo-type "${{ inputs.repo_type }}" \
-            --workers 2
+            --workers 2 $FORCE_FLAG
 
       # Mirror mode: after syncing, delete files that exist on the target but not
       # on the source. Destructive — only runs when the mirror checkbox is on.
